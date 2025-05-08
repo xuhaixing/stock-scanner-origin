@@ -1,6 +1,8 @@
 # 股票分析系统 (Stock Analysis System)
 ## 提要
 stock_analyzer.py是gui界面分析a股的关键文件，在21-22行中记得填入apiurl防止无法使用ai分析
+
+## 先是说声抱歉，可能在九月份我升学前可能都没有空继续精进本项目，主要是人太累了。如果我成功升学，在校期间会快速更新大家想要的新功能。
 ## 特殊情况
 这种情况下为正常
 ![image](https://github.com/user-attachments/assets/1b276236-10bc-45a0-aa12-ac0bd6a5ce9c)
