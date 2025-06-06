@@ -92,4 +92,4 @@ python 全部股票分析推荐1.py
 本系统仅用于学习和研究目的，投资有风险，入市需谨慎。
 
 ### 特别鸣谢
-![image](https://github.com/user-attachments/assets/52a32b9e-0c6c-4e81-b823-5b287dd03e3a)
+![image]([https://github.com/user-attachments/assets/52a32b9e-0c6c-4e81-b823-5b287dd03e3a](https://dartnode.com/))
