@@ -1,5 +1,5 @@
-# 使用官方Python 3.9镜像作为基础镜像
-FROM python:3.12-slim
+# 使用官方Python 3.11镜像作为基础镜像（解决版本兼容性问题）
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -9,7 +9,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
@@ -17,14 +19,18 @@ RUN apt-get update && apt-get install -y \
     g++ \
     curl \
     tzdata \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone
 
+# 升级pip
+RUN pip install --upgrade pip
+
 # 复制requirements文件
 COPY requirements.txt .
 
-# 安装Python依赖
+# 安装Python依赖（使用清华源加速）
 RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 复制应用代码
