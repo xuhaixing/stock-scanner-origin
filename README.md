@@ -8,6 +8,8 @@ stock_analyzer.py是gui界面分析a股的关键文件，在21-22行中记得填
 这种情况下为正常
 ![image](https://github.com/user-attachments/assets/1b276236-10bc-45a0-aa12-ac0bd6a5ce9c)
 
+
+# 以下readme可能已经过时，等我有空整理，仅供参考。
 ## 项目简介 (Project Overview)
 
 这是一个专业的A股股票分析系统，提供全面的技术指标分析和投资建议。系统包括三个主要组件：
