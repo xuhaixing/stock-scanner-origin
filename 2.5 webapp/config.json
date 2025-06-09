@@ -1,0 +1,16 @@
+{
+    "api_keys": {
+        "openai": "sk-wU45xc1X0elrkOD8IC0KyHzm6h4kgrfpfFWAIa0aShLn5CWR"
+    },
+    "ai": {
+        "models": {
+            "openai": "gpt-4.1-nano"
+        },
+        "api_base_urls": {
+            "openai": "http://192.168.3.23:3001/v1"
+        }
+    },
+    "analysis_params": {
+        "technical_period_days": 365
+    }
+}
