@@ -89,7 +89,7 @@ python 全部股票分析推荐1.py
 欢迎提交 issues 和 pull requests！
 
 ## 许可证 (License)
-[待添加具体许可证信息]
+ MIT License
 
 ## 免责声明 (Disclaimer)
 本系统仅用于学习和研究目的，投资有风险，入市需谨慎。
