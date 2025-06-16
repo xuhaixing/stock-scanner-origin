@@ -2,7 +2,7 @@
 ## 提要
 stock_analyzer.py是gui界面分析a股的关键文件，在21-22行中记得填入apiurl防止无法使用ai分析（1.0版本需要。新版本参考config,json配置）
 ### 更新2.0版本 现在支持，25项财务指标，综合新闻分析，高级情绪分析等全部数据获取。兼容openai格式，支持更多的模型。（但是本版本由于获取数据量大，会导致分析时间比较的长。根据服务器网络情况不同，可能1-5分钟）
-### 感谢https://dartnode.com/  赞助的服务器，我将可以给大家提供示例网页（直接上2.5版本，针对web端优化）。（模型使用"deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"，能力不是很强,应该够用）
+### 我将可以给大家提供示例网页（直接上2.5版本，针对web端优化）。（模型使用"deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"，能力不是很强,应该够用）
 ### 请我喝奶茶：https://juanzen.linzefeng.top/
 ## 特殊情况
 这种情况下为正常
@@ -115,8 +115,10 @@ SOFTWARE.
 本系统仅用于学习和研究目的，投资有风险，入市需谨慎。
 
 ### 特别鸣谢
-[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
 
+![image](https://github.com/user-attachments/assets/843f88fc-ecf7-4993-93c4-f82a29078e28)
+[yxvm](https://yxvm.com/)
+[NodeSupport](https://github.com/NodeSeekDev/NodeSupport)赞助了本项目
 ## 👨‍💻 Author
 
 Created by [linzefeng]
