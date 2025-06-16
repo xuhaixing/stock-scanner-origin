@@ -217,7 +217,7 @@ class EnhancedStockAnalyzer:
             if datetime.now() - cache_time < self.cache_duration:
                 self.logger.info(f"使用缓存的价格数据: {stock_code}")
                 return data
-        
+
         try:
             import akshare as ak
             
@@ -237,32 +237,41 @@ class EnhancedStockAnalyzer:
             if stock_data.empty:
                 raise ValueError(f"无法获取股票 {stock_code} 的数据")
             
-            # 智能处理列名映射
+            # 智能处理列名映射 - 修复版本
             try:
                 actual_columns = len(stock_data.columns)
+                self.logger.info(f"获取到 {actual_columns} 列数据，列名: {list(stock_data.columns)}")
                 
-                if actual_columns == 11:
+                # 根据实际返回的列数进行映射
+                if actual_columns == 13:  # 包含code列的完整格式
+                    standard_columns = ['date', 'code', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate', 'extra']
+                elif actual_columns == 12:  # 包含code列
+                    standard_columns = ['date', 'code', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate']
+                elif actual_columns == 11:  # 不包含code列的标准格式
                     standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate']
-                elif actual_columns == 12:
-                    standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate', 'extra']
-                elif actual_columns == 10:
+                elif actual_columns == 10:  # 简化格式
                     standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount']
                 else:
+                    # 对于未知格式，尝试智能识别
                     standard_columns = [f'col_{i}' for i in range(actual_columns)]
                     self.logger.warning(f"未知的列数格式 ({actual_columns} 列)，使用通用列名")
                 
+                # 创建列名映射
                 column_mapping = dict(zip(stock_data.columns, standard_columns))
                 stock_data = stock_data.rename(columns=column_mapping)
+                
+                self.logger.info(f"列名映射完成: {column_mapping}")
                 
             except Exception as e:
                 self.logger.warning(f"列名标准化失败: {e}，保持原列名")
             
-            # 确保必要的列存在
+            # 确保必要的列存在并且映射正确
             required_columns = ['close', 'open', 'high', 'low', 'volume']
             missing_columns = []
             
             for col in required_columns:
                 if col not in stock_data.columns:
+                    # 尝试找到相似的列名
                     similar_cols = [c for c in stock_data.columns if col in c.lower() or c.lower() in col]
                     if similar_cols:
                         stock_data[col] = stock_data[similar_cols[0]]
@@ -272,19 +281,35 @@ class EnhancedStockAnalyzer:
             
             if missing_columns:
                 self.logger.warning(f"缺少必要的列: {missing_columns}")
-                if len(stock_data.columns) >= 5:
+                # 如果缺少必要列，尝试使用位置索引映射
+                if len(stock_data.columns) >= 6:  # 至少有6列才能进行位置映射
                     cols = list(stock_data.columns)
-                    stock_data = stock_data.rename(columns={
-                        cols[0]: 'date',
-                        cols[1]: 'open', 
-                        cols[2]: 'close',
-                        cols[3]: 'high',
-                        cols[4]: 'low'
-                    })
-                    if len(cols) > 5:
-                        stock_data = stock_data.rename(columns={cols[5]: 'volume'})
-                    else:
-                        stock_data['volume'] = 1000000
+                    # 通常akshare的列顺序是: 日期, [代码], 开盘, 收盘, 最高, 最低, 成交量, ...
+                    if 'code' in cols[1].lower() or len(cols[1]) == 6:  # 第二列是股票代码
+                        position_mapping = {
+                            cols[0]: 'date',
+                            cols[1]: 'code', 
+                            cols[2]: 'open',
+                            cols[3]: 'close',  # 确保第4列是收盘价
+                            cols[4]: 'high',
+                            cols[5]: 'low'
+                        }
+                        if len(cols) > 6:
+                            position_mapping[cols[6]] = 'volume'
+                    else:  # 没有代码列
+                        position_mapping = {
+                            cols[0]: 'date',
+                            cols[1]: 'open', 
+                            cols[2]: 'close',  # 确保第3列是收盘价
+                            cols[3]: 'high',
+                            cols[4]: 'low'
+                        }
+                        if len(cols) > 5:
+                            position_mapping[cols[5]] = 'volume'
+                    
+                    # 应用位置映射
+                    stock_data = stock_data.rename(columns=position_mapping)
+                    self.logger.info(f"✓ 应用位置映射: {position_mapping}")
             
             # 处理日期列
             try:
@@ -293,7 +318,6 @@ class EnhancedStockAnalyzer:
                     stock_data = stock_data.set_index('date')
                 else:
                     stock_data.index = pd.to_datetime(stock_data.index)
-                
             except Exception as e:
                 self.logger.warning(f"日期处理失败: {e}")
             
@@ -306,10 +330,23 @@ class EnhancedStockAnalyzer:
                     except:
                         pass
             
+            # 验证数据质量
+            if 'close' in stock_data.columns:
+                latest_close = stock_data['close'].iloc[-1]
+                latest_open = stock_data['open'].iloc[-1] if 'open' in stock_data.columns else 0
+                self.logger.info(f"✓ 数据验证 - 最新收盘价: {latest_close}, 最新开盘价: {latest_open}")
+                
+                # 检查收盘价是否合理
+                if pd.isna(latest_close) or latest_close <= 0:
+                    self.logger.error(f"❌ 收盘价数据异常: {latest_close}")
+                    raise ValueError(f"股票 {stock_code} 的收盘价数据异常")
+            
             # 缓存数据
             self.price_cache[stock_code] = (datetime.now(), stock_data)
             
             self.logger.info(f"✓ 成功获取 {stock_code} 的价格数据，共 {len(stock_data)} 条记录")
+            self.logger.info(f"✓ 数据列: {list(stock_data.columns)}")
+            
             return stock_data
             
         except Exception as e:
@@ -871,7 +908,9 @@ class EnhancedStockAnalyzer:
                 'sentiment_trend': sentiment_trend,
                 'confidence_score': confidence_score,
                 'total_analyzed': len(all_texts),
-                'type_distribution': {k: len(v) for k, v in sentiment_by_type.items()}
+                'type_distribution': {k: len(v) for k, v in sentiment_by_type.items()},
+                'positive_ratio': len([s for s in overall_scores if s > 0]) / len(overall_scores) if overall_scores else 0,
+                'negative_ratio': len([s for s in overall_scores if s < 0]) / len(overall_scores) if overall_scores else 0
             }
             
             self.logger.info(f"✓ 高级情绪分析完成: {sentiment_trend} (得分: {overall_sentiment:.3f})")
@@ -1185,9 +1224,10 @@ class EnhancedStockAnalyzer:
             return stock_code
 
     def get_price_info(self, price_data):
-        """从价格数据中提取关键信息"""
+        """从价格数据中提取关键信息 - 修复版本"""
         try:
             if price_data.empty or 'close' not in price_data.columns:
+                self.logger.warning("价格数据为空或缺少收盘价列")
                 return {
                     'current_price': 0.0,
                     'price_change': 0.0,
@@ -1195,20 +1235,44 @@ class EnhancedStockAnalyzer:
                     'volatility': 0.0
                 }
             
+            # 获取最新数据
             latest = price_data.iloc[-1]
+            
+            # 确保使用收盘价作为当前价格
             current_price = float(latest['close'])
+            self.logger.info(f"✓ 当前价格(收盘价): {current_price}")
+            
+            # 如果收盘价异常，尝试使用其他价格
+            if pd.isna(current_price) or current_price <= 0:
+                if 'open' in price_data.columns and not pd.isna(latest['open']) and latest['open'] > 0:
+                    current_price = float(latest['open'])
+                    self.logger.warning(f"⚠️ 收盘价异常，使用开盘价: {current_price}")
+                elif 'high' in price_data.columns and not pd.isna(latest['high']) and latest['high'] > 0:
+                    current_price = float(latest['high'])
+                    self.logger.warning(f"⚠️ 收盘价异常，使用最高价: {current_price}")
+                else:
+                    self.logger.error(f"❌ 所有价格数据都异常")
+                    return {
+                        'current_price': 0.0,
+                        'price_change': 0.0,
+                        'volume_ratio': 1.0,
+                        'volatility': 0.0
+                    }
             
             # 计算价格变化
             price_change = 0.0
             try:
                 if 'change_pct' in price_data.columns and not pd.isna(latest['change_pct']):
                     price_change = float(latest['change_pct'])
+                    self.logger.info(f"✓ 使用现成的涨跌幅: {price_change}%")
                 elif len(price_data) > 1:
                     prev = price_data.iloc[-2]
                     prev_price = float(prev['close'])
-                    if prev_price > 0:
+                    if prev_price > 0 and not pd.isna(prev_price):
                         price_change = ((current_price - prev_price) / prev_price * 100)
+                        self.logger.info(f"✓ 计算涨跌幅: {price_change}%")
             except Exception as e:
+                self.logger.warning(f"计算价格变化失败: {e}")
                 price_change = 0.0
             
             # 计算成交量比率
@@ -1222,6 +1286,7 @@ class EnhancedStockAnalyzer:
                         if avg_volume > 0:
                             volume_ratio = recent_volume / avg_volume
             except Exception as e:
+                self.logger.warning(f"计算成交量比率失败: {e}")
                 volume_ratio = 1.0
             
             # 计算波动率
@@ -1233,14 +1298,18 @@ class EnhancedStockAnalyzer:
                     if len(returns) >= 20:
                         volatility = returns.tail(20).std() * 100
             except Exception as e:
+                self.logger.warning(f"计算波动率失败: {e}")
                 volatility = 0.0
             
-            return {
+            result = {
                 'current_price': current_price,
                 'price_change': price_change,
                 'volume_ratio': volume_ratio,
                 'volatility': volatility
             }
+            
+            self.logger.info(f"✓ 价格信息提取完成: {result}")
+            return result
             
         except Exception as e:
             self.logger.error(f"获取价格信息失败: {e}")
@@ -1718,6 +1787,13 @@ class EnhancedStockAnalyzer:
             self.logger.error(f"高级规则分析失败: {e}")
             return "分析系统暂时不可用，请稍后重试。"
 
+    def set_streaming_config(self, enabled=True, show_thinking=True):
+        """设置流式推理配置"""
+        self.streaming_config.update({
+            'enabled': enabled,
+            'show_thinking': show_thinking
+        })
+
     def analyze_stock(self, stock_code, enable_streaming=None):
         """分析股票的主方法（增强版）"""
         if enable_streaming is None:
@@ -1811,12 +1887,31 @@ class EnhancedStockAnalyzer:
             self.logger.error(f"增强版股票分析失败 {stock_code}: {str(e)}")
             raise
 
+    # 兼容旧版本的方法名
+    def get_fundamental_data(self, stock_code):
+        """兼容方法：获取基本面数据"""
+        return self.get_comprehensive_fundamental_data(stock_code)
+    
+    def get_news_data(self, stock_code, days=30):
+        """兼容方法：获取新闻数据"""
+        return self.get_comprehensive_news_data(stock_code, days)
+    
+    def calculate_news_sentiment(self, news_data):
+        """兼容方法：计算新闻情绪"""
+        return self.calculate_advanced_sentiment_analysis(news_data)
+    
+    def get_sentiment_analysis(self, stock_code):
+        """兼容方法：获取情绪分析"""
+        news_data = self.get_comprehensive_news_data(stock_code)
+        return self.calculate_advanced_sentiment_analysis(news_data)
+
+
 def main():
     """主函数"""
     analyzer = EnhancedStockAnalyzer()
     
     # 测试分析
-    test_stocks = ['000001', '600036', '300019']
+    test_stocks = ['000001', '600036', '300019', '000525']
     
     for stock_code in test_stocks:
         try:
@@ -1825,6 +1920,8 @@ def main():
             
             print(f"股票代码: {report['stock_code']}")
             print(f"股票名称: {report['stock_name']}")
+            print(f"当前价格: {report['price_info']['current_price']:.2f}元")
+            print(f"涨跌幅: {report['price_info']['price_change']:.2f}%")
             print(f"财务指标数量: {report['data_quality']['financial_indicators_count']}")
             print(f"新闻数据量: {report['data_quality']['total_news_count']}")
             print(f"综合得分: {report['scores']['comprehensive']:.1f}")
@@ -1833,6 +1930,7 @@ def main():
             
         except Exception as e:
             print(f"分析 {stock_code} 失败: {e}")
+
 
 if __name__ == "__main__":
     main()
