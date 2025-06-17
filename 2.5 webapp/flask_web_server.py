@@ -1,15 +1,15 @@
 """
-Flask Web服务器 - 现代股票分析系统
-提供API接口支持前端调用
+Flask Web服务器 - 现代股票分析系统（修正版）
+提供API接口支持前端调用，包含密码鉴权功能
 """
 
-from flask import Flask, request, jsonify, render_template_string, send_from_directory
+from flask import Flask, request, jsonify, render_template_string, send_from_directory, session, redirect, url_for
 from flask_cors import CORS
 import logging
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import sys
 import math
@@ -17,6 +17,8 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from functools import wraps
+import hashlib
+import secrets
 
 # 导入我们的分析器
 try:
@@ -33,6 +35,9 @@ CORS(app)  # 允许跨域请求
 # 高并发优化配置
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False  # 关闭JSON格式化以提升性能
 app.config['JSON_SORT_KEYS'] = False  # 关闭JSON键排序
+
+# 生成随机的SECRET_KEY（每次启动都不同，增强安全性）
+app.secret_key = secrets.token_hex(32)
 
 # 全局变量
 analyzer = None
@@ -60,10 +65,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 全局变量
-analyzer = None
-analysis_tasks = {}  # 存储分析任务状态
-
 def clean_data_for_json(obj):
     """清理数据中的NaN、Infinity等无效值，使其能够正确序列化为JSON"""
     if isinstance(obj, dict):
@@ -89,13 +90,245 @@ def clean_data_for_json(obj):
     else:
         return obj
 
-# HTML模板 - 修复转义序列警告
-HTML_TEMPLATE = """<!DOCTYPE html>
+def check_auth_config():
+    """检查鉴权配置"""
+    if not analyzer:
+        return False, {}
+    
+    web_auth_config = analyzer.config.get('web_auth', {})
+    return web_auth_config.get('enabled', False), web_auth_config
+
+def require_auth(f):
+    """鉴权装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_enabled, auth_config = check_auth_config()
+        
+        if not auth_enabled:
+            return f(*args, **kwargs)
+        
+        # 检查session中是否已认证
+        if session.get('authenticated'):
+            # 检查session是否过期
+            login_time = session.get('login_time')
+            if login_time:
+                session_timeout = auth_config.get('session_timeout', 3600)  # 默认1小时
+                if (datetime.now() - datetime.fromisoformat(login_time)).total_seconds() < session_timeout:
+                    return f(*args, **kwargs)
+                else:
+                    session.pop('authenticated', None)
+                    session.pop('login_time', None)
+        
+        # 未认证，重定向到登录页面
+        return redirect(url_for('login'))
+    
+    return decorated_function
+
+# 登录页面HTML模板
+LOGIN_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>现代股票分析系统 - Enhanced v3.0</title>
+    <title>登录 - 现代股票分析系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .login-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .login-header {
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            font-size: 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .login-header p {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .btn:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .login-footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+            font-size: 12px;
+        }
+
+        @media (max-width: 640px) {
+            .login-container {
+                margin: 20px;
+                padding: 30px 20px;
+            }
+            
+            .login-header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>🔐 系统登录</h1>
+            <p>Enhanced v3.0-Web 股票分析系统</p>
+        </div>
+
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="success-message">
+            {{ success }}
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            <div class="form-group">
+                <label for="password">访问密码</label>
+                <input type="password" id="password" name="password" 
+                       class="form-control" placeholder="请输入访问密码" required>
+            </div>
+            
+            <button type="submit" class="btn">
+                🚀 登录系统
+            </button>
+        </form>
+
+        <div class="login-footer">
+            <p>🔒 系统采用密码鉴权保护</p>
+            <p>🛡️ 会话将在 {{ session_timeout }} 分钟后过期</p>
+        </div>
+    </div>
+
+    <script>
+        // 自动聚焦密码输入框
+        document.getElementById('password').focus();
+        
+        // 阻止表单重复提交
+        document.querySelector('form').addEventListener('submit', function() {
+            const btn = document.querySelector('.btn');
+            btn.disabled = true;
+            btn.textContent = '🔄 登录中...';
+            
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = '🚀 登录系统';
+            }, 3000);
+        });
+    </script>
+</body>
+</html>"""
+
+# 主页面HTML模板 - 修复转义序列警告
+MAIN_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>现代股票分析系统 - Enhanced v3.0-Web-Fixed</title>
     <style>
         * {
             margin: 0;
@@ -145,7 +378,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 14px;
         }
 
-        .config-btn {
+        .header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .config-btn, .logout-btn {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             border: 2px solid #dee2e6;
             border-radius: 8px;
@@ -153,10 +391,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             cursor: pointer;
             font-weight: 600;
             transition: all 0.3s ease;
+            text-decoration: none;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .logout-btn {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            border-color: #dc3545;
+            color: white;
         }
 
         .config-btn:hover {
             background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+            transform: translateY(-2px);
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
             transform: translateY(-2px);
         }
 
@@ -638,10 +890,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <h1>🚀 现代股票分析系统</h1>
             <div class="header-info">
                 <div class="version-info">
-                    Enhanced v3.0-Web | WebStockAnalyzer | 完整LLM API支持
+                    Enhanced v3.0-Web-Fixed | WebStockAnalyzer | 完整LLM API支持 {% if auth_enabled %}| 🔐 已认证{% endif %}
                     <span id="systemStatus" class="status-indicator status-ready">系统就绪</span>
                 </div>
-                <button class="config-btn" onclick="showConfig()">⚙️ AI配置</button>
+                <div class="header-buttons">
+                    <button class="config-btn" onclick="showConfig()">⚙️ AI配置</button>
+                    {% if auth_enabled %}
+                    <a href="{{ url_for('logout') }}" class="logout-btn">🚪 退出登录</a>
+                    {% endif %}
+                </div>
             </div>
         </div>
 
@@ -965,19 +1222,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 .replace(/^## (.*$)/gim, '<h2 style="color: #2c3e50; margin: 20px 0 10px 0;">$1</h2>')
                 .replace(/^# (.*$)/gim, '<h1 style="color: #2c3e50; margin: 24px 0 12px 0;">$1</h1>')
                 // 粗体
-                .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 // 斜体
-                .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
                 // 行内代码
                 .replace(/`(.*?)`/g, '<code style="background: #f1f3f4; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>')
                 // 链接
-                .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" style="color: #1976d2;">$1</a>')
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #1976d2;">$1</a>')
                 // 列表项
-                .replace(/^[\\-\\*\\+] (.*$)/gim, '<li style="margin: 4px 0;">$1</li>')
+                .replace(/^[\-\*\+] (.*$)/gim, '<li style="margin: 4px 0;">$1</li>')
                 // 段落
-                .replace(/\\n\\n/g, '</p><p>')
+                .replace(/\n\n/g, '</p><p>')
                 // 换行
-                .replace(/\\n/g, '<br>');
+                .replace(/\n/g, '<br>');
         }
 
         function displayBatchResults(reports) {
@@ -1144,7 +1401,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 return;
             }
 
-            const stockList = stockListText.split('\\n').map(s => s.trim()).filter(s => s);
+            const stockList = stockListText.split('\n').map(s => s.trim()).filter(s => s);
             if (stockList.length === 0) {
                 addLog('股票代码列表为空', 'warning');
                 return;
@@ -1211,10 +1468,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         const versions = data.data.api_versions || {};
                         const primary = data.data.primary_api || 'openai';
                         
-                        let configInfo = `🔧 Enhanced v3.0-Web AI配置状态
+                        let configInfo = `🔧 Enhanced v3.0-Web-Fixed AI配置状态
 
 🎯 当前系统状态：
-✅ 分析器：WebStockAnalyzer 
+✅ 分析器：WebStockAnalyzer (修正版)
 ✅ 高并发：${data.data.max_workers}个工作线程
 ✅ 活跃任务：${data.data.active_tasks}个
 
@@ -1236,7 +1493,7 @@ ${status} ${api}: ${version}`;
                             configInfo += `
 
 🚀 AI分析功能：完全可用
-✅ 深度财务分析
+✅ 深度财务分析 (25项指标)
 ✅ 技术面精准解读  
 ✅ 市场情绪挖掘
 ✅ 综合投资策略
@@ -1274,14 +1531,14 @@ ${status} ${api}: ${version}`;
 
 📁 相关文件：
 • 配置文件：config.json
-• 分析器：web_stock_analyzer.py  
-• 服务器：flask_app.py`;
+• 分析器：web_stock_analyzer.py (修正版)
+• 服务器：flask_web_server.py (含鉴权)`;
 
                         alert(configInfo);
                     }
                 })
                 .catch(error => {
-                    const fallbackInfo = `🔧 Enhanced v3.0-Web AI配置管理
+                    const fallbackInfo = `🔧 Enhanced v3.0-Web-Fixed AI配置管理
 
 ❌ 无法获取当前配置状态，请检查服务器连接
 
@@ -1330,7 +1587,7 @@ ${status} ${api}: ${version}`;
                 
                 const fileSize = (content.length / 1024).toFixed(1);
                 setTimeout(() => {
-                    alert(`分析报告已导出！\\n\\n📄 文件名：${filename}\\n📊 报告类型：${reportType}\\n📏 文件大小：${fileSize} KB\\n🔧 分析器：Enhanced v3.0-Web | WebStockAnalyzer`);
+                    alert(`分析报告已导出！\\n\\n📄 文件名：${filename}\\n📊 报告类型：${reportType}\\n📏 文件大小：${fileSize} KB\\n🔧 分析器：Enhanced v3.0-Web-Fixed | WebStockAnalyzer`);
                 }, 100);
 
             } catch (error) {
@@ -1344,7 +1601,7 @@ ${status} ${api}: ${version}`;
             // 确保AI分析内容以markdown格式导出
             const aiAnalysis = report.ai_analysis || '分析数据准备中...';
             
-            return `# 📈 股票分析报告 (Enhanced v3.0-Web)
+            return `# 📈 股票分析报告 (Enhanced v3.0-Web-Fixed)
 
 ## 🏢 基本信息
 | 项目 | 值 |
@@ -1375,19 +1632,19 @@ ${aiAnalysis}
 
 ---
 *报告生成时间：${new Date().toLocaleString('zh-CN')}*  
-*分析器版本：Enhanced v3.0-Web*  
-*分析器类：WebStockAnalyzer*  
+*分析器版本：Enhanced v3.0-Web-Fixed*  
+*分析器类：WebStockAnalyzer (修正版)*  
 *数据来源：多维度综合分析*
 `;
         }
 
         function generateBatchMarkdown(reports) {
-            let content = `# 📊 批量股票分析报告 - Enhanced v3.0-Web
+            let content = `# 📊 批量股票分析报告 - Enhanced v3.0-Web-Fixed
 
 **分析时间：** ${new Date().toLocaleString('zh-CN')}
 **分析数量：** ${reports.length} 只股票
-**分析器版本：** Enhanced v3.0-Web
-**分析器类：** WebStockAnalyzer
+**分析器版本：** Enhanced v3.0-Web-Fixed
+**分析器类：** WebStockAnalyzer (修正版)
 
 ## 📋 分析汇总
 
@@ -1397,14 +1654,14 @@ ${aiAnalysis}
 
             reports.sort((a, b) => b.scores.comprehensive - a.scores.comprehensive)
                    .forEach((report, index) => {
-                content += `| ${index + 1} | ${report.stock_code} | ${report.stock_name} | ${report.scores.comprehensive.toFixed(1)} | ${report.scores.technical.toFixed(1)} | ${report.scores.fundamental.toFixed(1)} | ${report.scores.sentiment.toFixed(1)} | ${report.recommendation} |\\n`;
+                content += `| ${index + 1} | ${report.stock_code} | ${report.stock_name} | ${report.scores.comprehensive.toFixed(1)} | ${report.scores.technical.toFixed(1)} | ${report.scores.fundamental.toFixed(1)} | ${report.scores.sentiment.toFixed(1)} | ${report.recommendation} |\n`;
             });
 
-            content += `\\n## 📈 详细分析\\n\\n`;
+            content += `\n## 📈 详细分析\n\n`;
             
             reports.forEach(report => {
                 content += generateSingleMarkdown(report);
-                content += '\\n---\\n\\n';
+                content += '\n---\n\n';
             });
 
             return content;
@@ -1420,9 +1677,10 @@ ${aiAnalysis}
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             addLog('🚀 现代股票分析系统已启动', 'success');
-            addLog('📋 Enhanced v3.0-Web | WebStockAnalyzer | 完整LLM API支持', 'info');
+            addLog('📋 Enhanced v3.0-Web-Fixed | WebStockAnalyzer (修正版)', 'info');
             addLog('🔥 高并发优化：线程池 + 异步处理 + 任务队列', 'info');
             addLog('🤖 AI分析：支持OpenAI/Claude/智谱AI智能切换', 'info');
+            addLog('🔐 安全特性：密码鉴权 + 会话管理', 'info');
             addLog('💡 支持股票代码：000001, 600036, 300019等', 'info');
             
             // 检查服务器连接和系统信息
@@ -1477,20 +1735,68 @@ def init_analyzer():
         logger.error(f"❌ 分析器初始化失败: {e}")
         return False
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """登录页面"""
+    auth_enabled, auth_config = check_auth_config()
+    
+    if not auth_enabled:
+        # 如果未启用鉴权，直接跳转到主页
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        config_password = auth_config.get('password', '')
+        
+        if not config_password:
+            return render_template_string(LOGIN_TEMPLATE, 
+                error="系统未设置访问密码，请联系管理员配置", 
+                session_timeout=auth_config.get('session_timeout', 3600) // 60
+            )
+        
+        # 简单的密码验证
+        if password == config_password:
+            session['authenticated'] = True
+            session['login_time'] = datetime.now().isoformat()
+            logger.info("用户登录成功")
+            return redirect(url_for('index'))
+        else:
+            logger.warning("用户登录失败：密码错误")
+            return render_template_string(LOGIN_TEMPLATE, 
+                error="密码错误，请重试", 
+                session_timeout=auth_config.get('session_timeout', 3600) // 60
+            )
+    
+    return render_template_string(LOGIN_TEMPLATE, 
+        session_timeout=auth_config.get('session_timeout', 3600) // 60
+    )
+
+@app.route('/logout')
+def logout():
+    """退出登录"""
+    session.pop('authenticated', None)
+    session.pop('login_time', None)
+    logger.info("用户退出登录")
+    return redirect(url_for('login'))
+
 @app.route('/')
+@require_auth
 def index():
     """主页"""
-    return render_template_string(HTML_TEMPLATE)
+    auth_enabled, _ = check_auth_config()
+    return render_template_string(MAIN_TEMPLATE, auth_enabled=auth_enabled)
 
 @app.route('/api/status', methods=['GET'])
 def status():
     """系统状态检查"""
     try:
+        auth_enabled, auth_config = check_auth_config()
         return jsonify({
             'success': True,
             'status': 'ready',
             'message': 'Web股票分析系统运行正常',
             'analyzer_available': analyzer is not None,
+            'auth_enabled': auth_enabled,
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
@@ -1509,6 +1815,7 @@ def analyze_stock_async(stock_code, enable_streaming=False):
         raise
 
 @app.route('/api/analyze', methods=['POST'])
+@require_auth
 def analyze_stock():
     """单只股票分析 - 支持高并发"""
     try:
@@ -1576,6 +1883,7 @@ def analyze_stock():
         }), 500
 
 @app.route('/api/batch_analyze', methods=['POST'])
+@require_auth
 def batch_analyze():
     """批量股票分析 - 优化并发处理"""
     try:
@@ -1651,6 +1959,7 @@ def batch_analyze():
         }), 500
 
 @app.route('/api/task_status/<stock_code>', methods=['GET'])
+@require_auth
 def get_task_status(stock_code):
     """获取分析任务状态"""
     try:
@@ -1719,6 +2028,9 @@ def get_system_info():
                         except ImportError:
                             api_versions[api_name] = "未安装"
         
+        # 检测鉴权状态
+        auth_enabled, auth_config = check_auth_config()
+        
         return jsonify({
             'success': True,
             'data': {
@@ -1729,6 +2041,8 @@ def get_system_info():
                 'api_versions': api_versions,
                 'api_configured': len(configured_apis) > 0,
                 'primary_api': analyzer.config.get('ai', {}).get('model_preference', 'openai') if analyzer else None,
+                'auth_enabled': auth_enabled,
+                'auth_configured': auth_config.get('password', '') != '',
                 'timestamp': datetime.now().isoformat()
             }
         })
@@ -1755,9 +2069,9 @@ def internal_error(error):
 
 def main():
     """主函数"""
-    print("🚀 启动Web版现代股票分析系统...")
-    print("🔥 高并发优化版本 | 完整LLM API支持")
-    print("=" * 60)
+    print("🚀 启动Web版现代股票分析系统（修正版）...")
+    print("🔥 高并发优化版本 | 完整LLM API支持 | 密码鉴权")
+    print("=" * 70)
     
     # 检查依赖
     missing_deps = []
@@ -1832,6 +2146,17 @@ def main():
                     print(f"   🔑 已配置API: {', '.join(configured_apis)}")
                 else:
                     print("   ⚠️  API密钥: 未配置")
+                
+                # 检查Web鉴权配置
+                web_auth = config.get('web_auth', {})
+                if web_auth.get('enabled', False):
+                    if web_auth.get('password'):
+                        print(f"   🔐 Web鉴权: 已启用 (会话超时: {web_auth.get('session_timeout', 3600)}秒)")
+                    else:
+                        print("   ⚠️  Web鉴权: 已启用但未设置密码")
+                else:
+                    print("   🔓 Web鉴权: 未启用")
+                    
         except Exception as e:
             print(f"   ❌ config.json: 格式错误 - {e}")
     else:
@@ -1842,7 +2167,7 @@ def main():
         print(f"请运行以下命令安装: pip install {' '.join(missing_deps)}")
         return
     
-    print("=" * 60)
+    print("=" * 70)
     
     # 初始化分析器
     if not init_analyzer():
@@ -1856,6 +2181,25 @@ def main():
     print("   - 任务队列: 支持")
     print("   - 重复请求防护: 启用")
     print("   - 批量并发优化: 启用")
+    
+    print("🔐 安全特性:")
+    if analyzer:
+        web_auth = analyzer.config.get('web_auth', {})
+        if web_auth.get('enabled', False):
+            if web_auth.get('password'):
+                timeout_minutes = web_auth.get('session_timeout', 3600) // 60
+                print(f"   - 密码鉴权: 已启用")
+                print(f"   - 会话超时: {timeout_minutes} 分钟")
+                print(f"   - 安全状态: 保护模式")
+            else:
+                print("   - 密码鉴权: 已启用但未设置密码")
+                print("   - 安全状态: 配置不完整")
+        else:
+            print("   - 密码鉴权: 未启用")
+            print("   - 安全状态: 开放模式")
+    else:
+        print("   - 鉴权配置: 无法检测")
+    
     print("🤖 AI分析特性:")
     if analyzer:
         api_keys = analyzer.api_keys
@@ -1868,7 +2212,7 @@ def main():
             
             # 显示自定义配置
             api_base = analyzer.config.get('ai', {}).get('api_base_urls', {}).get('openai')
-            if api_base:
+            if api_base and api_base != 'https://api.openai.com/v1':
                 print(f"   - 自定义API地址: {api_base}")
             
             model = analyzer.config.get('ai', {}).get('models', {}).get(primary_api, 'default')
@@ -1885,12 +2229,13 @@ def main():
     print("   - 智能切换: 启用")
     print("   - 版本兼容: 新旧版本自动适配")
     print("   - 规则分析备用: 启用")
+    
     print("📋 分析配置:")
     if analyzer:
         params = analyzer.analysis_params
         weights = analyzer.analysis_weights
         print(f"   - 技术分析周期: {params.get('technical_period_days', 180)} 天")
-        print(f"   - 财务指标数量: {params.get('financial_indicators_count', 20)} 项")
+        print(f"   - 财务指标数量: {params.get('financial_indicators_count', 25)} 项")
         print(f"   - 新闻分析数量: {params.get('max_news_count', 100)} 条")
         print(f"   - 分析权重: 技术{weights['technical']:.1f} | 基本面{weights['fundamental']:.1f} | 情绪{weights['sentiment']:.1f}")
     else:
@@ -1900,15 +2245,23 @@ def main():
     print("   - 日志文件: 已禁用")
     print("   - JSON压缩: 启用")
     print("   - 缓存优化: 启用")
+    print("   - NaN值清理: 启用")
+    
     print("🌐 Web服务器启动中...")
     print("📱 请在浏览器中访问: http://localhost:5000")
+    
+    if analyzer and analyzer.config.get('web_auth', {}).get('enabled', False):
+        print("🔐 首次访问需要密码验证")
+    
     print("🔧 API接口文档:")
     print("   - GET  /api/status - 系统状态")
     print("   - POST /api/analyze - 单只股票分析")
     print("   - POST /api/batch_analyze - 批量股票分析")
     print("   - GET  /api/task_status/<code> - 任务状态")
     print("   - GET  /api/system_info - 系统信息")
-    print("=" * 60)
+    print("   - GET  /login - 登录页面 (如启用鉴权)")
+    print("   - GET  /logout - 退出登录")
+    print("=" * 70)
     
     # 启动Flask服务器
     try:

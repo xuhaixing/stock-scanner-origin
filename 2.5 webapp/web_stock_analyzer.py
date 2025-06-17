@@ -1,6 +1,6 @@
 """
 Web版增强股票分析系统
-删除了股东信息获取功能，优化了web环境的性能
+基于最新 stock_analyzer.py 修正版本
 """
 
 import os
@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 
 class WebStockAnalyzer:
-    """Web版增强股票分析器（删除股东信息功能）"""
+    """Web版增强股票分析器（基于最新 stock_analyzer.py 修正）"""
     
     def __init__(self, config_file='config.json'):
         """初始化分析器"""
@@ -78,7 +78,7 @@ class WebStockAnalyzer:
         self.analysis_params = {
             'max_news_count': params.get('max_news_count', 100),  # Web版减少新闻数量
             'technical_period_days': params.get('technical_period_days', 180),  # Web版减少分析周期
-            'financial_indicators_count': params.get('financial_indicators_count', 20)  # Web版减少指标数量
+            'financial_indicators_count': params.get('financial_indicators_count', 25)  # 保持25项指标
         }
         
         # API密钥配置
@@ -103,6 +103,13 @@ class WebStockAnalyzer:
                 
         except json.JSONDecodeError as e:
             self.logger.error(f"❌ 配置文件格式错误: {e}")
+            self.logger.info("使用默认配置并备份错误文件")
+            
+            if os.path.exists(self.config_file):
+                backup_name = f"{self.config_file}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                os.rename(self.config_file, backup_name)
+                self.logger.info(f"错误配置文件已备份为: {backup_name}")
+            
             default_config = self._get_default_config()
             self._save_config(default_config)
             return default_config
@@ -128,12 +135,17 @@ class WebStockAnalyzer:
                     "zhipu": "chatglm_turbo"
                 },
                 "max_tokens": 4000,
-                "temperature": 0.7
+                "temperature": 0.7,
+                "api_base_urls": {
+                    "openai": "https://api.openai.com/v1",
+                    "notes": "如使用中转API，修改上述URL"
+                }
             },
             "analysis_weights": {
                 "technical": 0.4,
                 "fundamental": 0.4,
-                "sentiment": 0.2
+                "sentiment": 0.2,
+                "notes": "权重总和应为1.0"
             },
             "cache": {
                 "price_hours": 1,
@@ -148,12 +160,18 @@ class WebStockAnalyzer:
             "analysis_params": {
                 "max_news_count": 100,
                 "technical_period_days": 180,
-                "financial_indicators_count": 20
+                "financial_indicators_count": 25
+            },
+            "web_auth": {
+                "enabled": False,
+                "password": "",
+                "session_timeout": 3600,
+                "notes": "Web界面密码鉴权配置"
             },
             "_metadata": {
-                "version": "3.0.0-web",
+                "version": "3.0.0-web-fixed",
                 "created": datetime.now().isoformat(),
-                "description": "Web版AI股票分析系统配置文件"
+                "description": "Web版AI股票分析系统配置文件（修正版）"
             }
         }
 
@@ -183,7 +201,7 @@ class WebStockAnalyzer:
             
             # 显示自定义配置
             api_base = self.config.get('ai', {}).get('api_base_urls', {}).get('openai')
-            if api_base:
+            if api_base and api_base != 'https://api.openai.com/v1':
                 self.logger.info(f"🔗 自定义API地址: {api_base}")
         else:
             self.logger.warning("⚠️ 未配置任何AI API密钥")
@@ -191,10 +209,18 @@ class WebStockAnalyzer:
         self.logger.info(f"📊 财务指标数量: {self.analysis_params['financial_indicators_count']}")
         self.logger.info(f"📰 最大新闻数量: {self.analysis_params['max_news_count']}")
         self.logger.info(f"📈 技术分析周期: {self.analysis_params['technical_period_days']} 天")
+        
+        # 检查Web鉴权配置
+        web_auth = self.config.get('web_auth', {})
+        if web_auth.get('enabled', False):
+            self.logger.info(f"🔐 Web鉴权: 已启用")
+        else:
+            self.logger.info(f"🔓 Web鉴权: 未启用")
+        
         self.logger.info("=" * 40)
 
     def get_stock_data(self, stock_code, period='1y'):
-        """获取股票价格数据（使用用户配置的周期）"""
+        """获取股票价格数据（修正版本）"""
         if stock_code in self.price_cache:
             cache_time, data = self.price_cache[stock_code]
             if datetime.now() - cache_time < self.cache_duration:
@@ -222,34 +248,79 @@ class WebStockAnalyzer:
             if stock_data.empty:
                 raise ValueError(f"无法获取股票 {stock_code} 的数据")
             
-            # 智能处理列名映射
+            # 智能处理列名映射 - 修复版本
             try:
                 actual_columns = len(stock_data.columns)
+                self.logger.info(f"获取到 {actual_columns} 列数据，列名: {list(stock_data.columns)}")
                 
-                if actual_columns == 11:
+                # 根据实际返回的列数进行映射
+                if actual_columns == 13:  # 包含code列的完整格式
+                    standard_columns = ['date', 'code', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate', 'extra']
+                elif actual_columns == 12:  # 包含code列
+                    standard_columns = ['date', 'code', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate']
+                elif actual_columns == 11:  # 不包含code列的标准格式
                     standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate']
-                elif actual_columns == 12:
-                    standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate', 'extra']
-                elif actual_columns == 10:
+                elif actual_columns == 10:  # 简化格式
                     standard_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount']
                 else:
+                    # 对于未知格式，尝试智能识别
                     standard_columns = [f'col_{i}' for i in range(actual_columns)]
                     self.logger.warning(f"未知的列数格式 ({actual_columns} 列)，使用通用列名")
                 
+                # 创建列名映射
                 column_mapping = dict(zip(stock_data.columns, standard_columns))
                 stock_data = stock_data.rename(columns=column_mapping)
+                
+                self.logger.info(f"列名映射完成: {column_mapping}")
                 
             except Exception as e:
                 self.logger.warning(f"列名标准化失败: {e}，保持原列名")
             
-            # 确保必要的列存在
+            # 确保必要的列存在并且映射正确
             required_columns = ['close', 'open', 'high', 'low', 'volume']
+            missing_columns = []
+            
             for col in required_columns:
                 if col not in stock_data.columns:
+                    # 尝试找到相似的列名
                     similar_cols = [c for c in stock_data.columns if col in c.lower() or c.lower() in col]
                     if similar_cols:
                         stock_data[col] = stock_data[similar_cols[0]]
                         self.logger.info(f"✓ 映射列 {similar_cols[0]} -> {col}")
+                    else:
+                        missing_columns.append(col)
+            
+            if missing_columns:
+                self.logger.warning(f"缺少必要的列: {missing_columns}")
+                # 如果缺少必要列，尝试使用位置索引映射
+                if len(stock_data.columns) >= 6:  # 至少有6列才能进行位置映射
+                    cols = list(stock_data.columns)
+                    # 通常akshare的列顺序是: 日期, [代码], 开盘, 收盘, 最高, 最低, 成交量, ...
+                    if 'code' in cols[1].lower() or len(cols[1]) == 6:  # 第二列是股票代码
+                        position_mapping = {
+                            cols[0]: 'date',
+                            cols[1]: 'code', 
+                            cols[2]: 'open',
+                            cols[3]: 'close',  # 确保第4列是收盘价
+                            cols[4]: 'high',
+                            cols[5]: 'low'
+                        }
+                        if len(cols) > 6:
+                            position_mapping[cols[6]] = 'volume'
+                    else:  # 没有代码列
+                        position_mapping = {
+                            cols[0]: 'date',
+                            cols[1]: 'open', 
+                            cols[2]: 'close',  # 确保第3列是收盘价
+                            cols[3]: 'high',
+                            cols[4]: 'low'
+                        }
+                        if len(cols) > 5:
+                            position_mapping[cols[5]] = 'volume'
+                    
+                    # 应用位置映射
+                    stock_data = stock_data.rename(columns=position_mapping)
+                    self.logger.info(f"✓ 应用位置映射: {position_mapping}")
             
             # 处理日期列
             try:
@@ -270,10 +341,23 @@ class WebStockAnalyzer:
                     except:
                         pass
             
+            # 验证数据质量
+            if 'close' in stock_data.columns:
+                latest_close = stock_data['close'].iloc[-1]
+                latest_open = stock_data['open'].iloc[-1] if 'open' in stock_data.columns else 0
+                self.logger.info(f"✓ 数据验证 - 最新收盘价: {latest_close}, 最新开盘价: {latest_open}")
+                
+                # 检查收盘价是否合理
+                if pd.isna(latest_close) or latest_close <= 0:
+                    self.logger.error(f"❌ 收盘价数据异常: {latest_close}")
+                    raise ValueError(f"股票 {stock_code} 的收盘价数据异常")
+            
             # 缓存数据
             self.price_cache[stock_code] = (datetime.now(), stock_data)
             
             self.logger.info(f"✓ 成功获取 {stock_code} 的价格数据，共 {len(stock_data)} 条记录")
+            self.logger.info(f"✓ 数据列: {list(stock_data.columns)}")
+            
             return stock_data
             
         except Exception as e:
@@ -281,7 +365,7 @@ class WebStockAnalyzer:
             return pd.DataFrame()
 
     def get_comprehensive_fundamental_data(self, stock_code):
-        """获取综合财务指标数据（Web版，删除股东信息）"""
+        """获取25项综合财务指标数据（修正版本）"""
         if stock_code in self.fundamental_cache:
             cache_time, data = self.fundamental_cache[stock_code]
             if datetime.now() - cache_time < self.fundamental_cache_duration:
@@ -292,7 +376,7 @@ class WebStockAnalyzer:
             import akshare as ak
             
             fundamental_data = {}
-            self.logger.info(f"开始获取 {stock_code} 的综合财务指标...")
+            self.logger.info(f"开始获取 {stock_code} 的25项综合财务指标...")
             
             # 1. 基本信息
             try:
@@ -305,9 +389,9 @@ class WebStockAnalyzer:
                 self.logger.warning(f"获取基本信息失败: {e}")
                 fundamental_data['basic_info'] = {}
             
-            # 2. 详细财务指标
+            # 2. 详细财务指标 - 25项核心指标
             try:
-                self.logger.info("正在获取财务指标...")
+                self.logger.info("正在获取25项详细财务指标...")
                 financial_indicators = {}
                 
                 # 获取主要财务数据
@@ -329,7 +413,16 @@ class WebStockAnalyzer:
                 except Exception as e:
                     self.logger.warning(f"获取财务分析指标失败: {e}")
                 
-                # 计算核心财务指标
+                # 获取现金流量表
+                try:
+                    cash_flow = ak.stock_cash_flow_sheet_by_report_em(symbol=stock_code)
+                    if not cash_flow.empty:
+                        latest_cash = cash_flow.iloc[-1].to_dict()
+                        financial_indicators.update(latest_cash)
+                except Exception as e:
+                    self.logger.warning(f"获取现金流量表失败: {e}")
+                
+                # 计算25项核心财务指标
                 core_indicators = self._calculate_core_financial_indicators(financial_indicators)
                 fundamental_data['financial_indicators'] = core_indicators
                 
@@ -365,7 +458,7 @@ class WebStockAnalyzer:
                 self.logger.info("正在获取业绩预告...")
                 performance_forecast = ak.stock_yjbb_em(symbol=stock_code)
                 if not performance_forecast.empty:
-                    fundamental_data['performance_forecast'] = performance_forecast.head(5).to_dict('records')
+                    fundamental_data['performance_forecast'] = performance_forecast.head(10).to_dict('records')
                     self.logger.info("✓ 业绩预告获取成功")
                 else:
                     fundamental_data['performance_forecast'] = []
@@ -378,7 +471,7 @@ class WebStockAnalyzer:
                 self.logger.info("正在获取分红配股信息...")
                 dividend_info = ak.stock_fhpg_em(symbol=stock_code)
                 if not dividend_info.empty:
-                    fundamental_data['dividend_info'] = dividend_info.head(5).to_dict('records')
+                    fundamental_data['dividend_info'] = dividend_info.head(10).to_dict('records')
                     self.logger.info("✓ 分红配股信息获取成功")
                 else:
                     fundamental_data['dividend_info'] = []
@@ -395,8 +488,6 @@ class WebStockAnalyzer:
             except Exception as e:
                 self.logger.warning(f"获取行业分析失败: {e}")
                 fundamental_data['industry_analysis'] = {}
-            
-            # 注意：删除了股东信息和机构持股获取部分
             
             # 缓存数据
             self.fundamental_cache[stock_code] = (datetime.now(), fundamental_data)
@@ -416,7 +507,7 @@ class WebStockAnalyzer:
             }
 
     def _calculate_core_financial_indicators(self, raw_data):
-        """计算核心财务指标（Web版精简）"""
+        """计算25项核心财务指标（修正版本）"""
         try:
             indicators = {}
             
@@ -462,6 +553,36 @@ class WebStockAnalyzer:
             indicators['净资产增长率'] = safe_get('净资产增长率')
             indicators['经营现金流增长率'] = safe_get('经营现金流增长率')
             
+            # 21-25: 市场表现指标
+            indicators['市盈率'] = safe_get('市盈率')
+            indicators['市净率'] = safe_get('市净率')
+            indicators['市销率'] = safe_get('市销率')
+            indicators['PEG比率'] = safe_get('PEG比率')
+            indicators['股息收益率'] = safe_get('股息收益率')
+            
+            # 计算一些衍生指标
+            try:
+                # 如果有基础数据，计算一些关键比率
+                revenue = safe_get('营业收入')
+                net_income = safe_get('净利润')
+                total_assets = safe_get('总资产')
+                shareholders_equity = safe_get('股东权益')
+                
+                if revenue > 0 and net_income > 0:
+                    if indicators['净利润率'] == 0:
+                        indicators['净利润率'] = (net_income / revenue) * 100
+                
+                if total_assets > 0 and net_income > 0:
+                    if indicators['总资产收益率'] == 0:
+                        indicators['总资产收益率'] = (net_income / total_assets) * 100
+                
+                if shareholders_equity > 0 and net_income > 0:
+                    if indicators['净资产收益率'] == 0:
+                        indicators['净资产收益率'] = (net_income / shareholders_equity) * 100
+                        
+            except Exception as e:
+                self.logger.warning(f"计算衍生指标失败: {e}")
+            
             # 过滤掉无效的指标
             valid_indicators = {k: v for k, v in indicators.items() if v not in [0, None, 'nan']}
             
@@ -473,7 +594,7 @@ class WebStockAnalyzer:
             return {}
 
     def _get_industry_analysis(self, stock_code):
-        """获取行业分析数据（Web版简化）"""
+        """获取行业分析数据"""
         try:
             import akshare as ak
             
@@ -491,6 +612,21 @@ class WebStockAnalyzer:
                 self.logger.warning(f"获取行业信息失败: {e}")
                 industry_data['industry_info'] = {}
             
+            # 获取行业排名
+            try:
+                industry_rank = ak.stock_rank_em(symbol="行业排名")
+                if not industry_rank.empty:
+                    stock_rank = industry_rank[industry_rank.iloc[:, 1].astype(str).str.contains(stock_code, na=False)]
+                    if not stock_rank.empty:
+                        industry_data['industry_rank'] = stock_rank.iloc[0].to_dict()
+                    else:
+                        industry_data['industry_rank'] = {}
+                else:
+                    industry_data['industry_rank'] = {}
+            except Exception as e:
+                self.logger.warning(f"获取行业排名失败: {e}")
+                industry_data['industry_rank'] = {}
+            
             return industry_data
             
         except Exception as e:
@@ -498,7 +634,7 @@ class WebStockAnalyzer:
             return {}
 
     def get_comprehensive_news_data(self, stock_code, days=15):
-        """获取综合新闻数据（Web版优化）"""
+        """获取综合新闻数据（修正版本）"""
         cache_key = f"{stock_code}_{days}"
         if cache_key in self.news_cache:
             cache_time, data = self.news_cache[cache_key]
@@ -521,13 +657,13 @@ class WebStockAnalyzer:
                 'news_summary': {}
             }
             
-            # 1. 公司新闻（减少数量）
+            # 1. 公司新闻
             try:
                 self.logger.info("正在获取公司新闻...")
                 company_news = ak.stock_news_em(symbol=stock_code)
                 if not company_news.empty:
                     processed_news = []
-                    for _, row in company_news.head(20).iterrows():  # Web版减少到20条
+                    for _, row in company_news.head(50).iterrows():  # 增加获取数量
                         news_item = {
                             'title': str(row.get(row.index[0], '')),
                             'content': str(row.get(row.index[1], '')) if len(row.index) > 1 else '',
@@ -543,13 +679,13 @@ class WebStockAnalyzer:
             except Exception as e:
                 self.logger.warning(f"获取公司新闻失败: {e}")
             
-            # 2. 公司公告（减少数量）
+            # 2. 公司公告
             try:
                 self.logger.info("正在获取公司公告...")
                 announcements = ak.stock_zh_a_alerts_cls(symbol=stock_code)
                 if not announcements.empty:
                     processed_announcements = []
-                    for _, row in announcements.head(10).iterrows():  # Web版减少到10条
+                    for _, row in announcements.head(30).iterrows():  # 增加获取数量
                         announcement = {
                             'title': str(row.get(row.index[0], '')),
                             'content': str(row.get(row.index[1], '')) if len(row.index) > 1 else '',
@@ -564,13 +700,13 @@ class WebStockAnalyzer:
             except Exception as e:
                 self.logger.warning(f"获取公司公告失败: {e}")
             
-            # 3. 研究报告（减少数量）
+            # 3. 研究报告
             try:
                 self.logger.info("正在获取研究报告...")
                 research_reports = ak.stock_research_report_em(symbol=stock_code)
                 if not research_reports.empty:
                     processed_reports = []
-                    for _, row in research_reports.head(10).iterrows():  # Web版减少到10条
+                    for _, row in research_reports.head(20).iterrows():  # 增加获取数量
                         report = {
                             'title': str(row.get(row.index[0], '')),
                             'institution': str(row.get(row.index[1], '')) if len(row.index) > 1 else '',
@@ -586,24 +722,38 @@ class WebStockAnalyzer:
             except Exception as e:
                 self.logger.warning(f"获取研究报告失败: {e}")
             
-            # 4. 新闻摘要统计
-            total_news = (len(all_news_data['company_news']) + 
-                        len(all_news_data['announcements']) + 
-                        len(all_news_data['research_reports']))
+            # 4. 行业新闻
+            try:
+                self.logger.info("正在获取行业新闻...")
+                industry_news = self._get_comprehensive_industry_news(stock_code, days)
+                all_news_data['industry_news'] = industry_news
+                self.logger.info(f"✓ 获取行业新闻 {len(industry_news)} 条")
+            except Exception as e:
+                self.logger.warning(f"获取行业新闻失败: {e}")
             
-            all_news_data['news_summary'] = {
-                'total_news_count': total_news,
-                'company_news_count': len(all_news_data['company_news']),
-                'announcements_count': len(all_news_data['announcements']),
-                'research_reports_count': len(all_news_data['research_reports']),
-                'industry_news_count': 0,  # Web版暂不获取行业新闻
-                'data_freshness': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
+            # 5. 新闻摘要统计
+            try:
+                total_news = (len(all_news_data['company_news']) + 
+                            len(all_news_data['announcements']) + 
+                            len(all_news_data['research_reports']) + 
+                            len(all_news_data['industry_news']))
+                
+                all_news_data['news_summary'] = {
+                    'total_news_count': total_news,
+                    'company_news_count': len(all_news_data['company_news']),
+                    'announcements_count': len(all_news_data['announcements']),
+                    'research_reports_count': len(all_news_data['research_reports']),
+                    'industry_news_count': len(all_news_data['industry_news']),
+                    'data_freshness': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                
+            except Exception as e:
+                self.logger.warning(f"生成新闻摘要失败: {e}")
             
             # 缓存数据
             self.news_cache[cache_key] = (datetime.now(), all_news_data)
             
-            self.logger.info(f"✓ 综合新闻数据获取完成，总计 {total_news} 条")
+            self.logger.info(f"✓ 综合新闻数据获取完成，总计 {all_news_data['news_summary'].get('total_news_count', 0)} 条")
             return all_news_data
             
         except Exception as e:
@@ -617,8 +767,26 @@ class WebStockAnalyzer:
                 'news_summary': {'total_news_count': 0}
             }
 
+    def _get_comprehensive_industry_news(self, stock_code, days=30):
+        """获取详细的行业新闻"""
+        try:
+            # 这里可以根据实际需要扩展行业新闻获取逻辑
+            # 目前返回一个示例结构
+            industry_news = []
+            
+            # 可以添加更多的行业新闻源
+            # 比如获取同行业其他公司的新闻
+            # 获取行业政策新闻等
+            
+            self.logger.info(f"行业新闻获取完成，共 {len(industry_news)} 条")
+            return industry_news
+            
+        except Exception as e:
+            self.logger.warning(f"获取行业新闻失败: {e}")
+            return []
+
     def calculate_advanced_sentiment_analysis(self, comprehensive_news_data):
-        """计算高级情绪分析（Web版优化）"""
+        """计算高级情绪分析（修正版本）"""
         self.logger.info("开始高级情绪分析...")
         
         try:
@@ -632,11 +800,15 @@ class WebStockAnalyzer:
             
             for announcement in comprehensive_news_data.get('announcements', []):
                 text = f"{announcement.get('title', '')} {announcement.get('content', '')}"
-                all_texts.append({'text': text, 'type': 'announcement', 'weight': 1.2})
+                all_texts.append({'text': text, 'type': 'announcement', 'weight': 1.2})  # 公告权重更高
             
             for report in comprehensive_news_data.get('research_reports', []):
                 text = f"{report.get('title', '')} {report.get('rating', '')}"
                 all_texts.append({'text': text, 'type': 'research_report', 'weight': 0.9})
+            
+            for news in comprehensive_news_data.get('industry_news', []):
+                text = f"{news.get('title', '')} {news.get('content', '')}"
+                all_texts.append({'text': text, 'type': 'industry_news', 'weight': 0.7})
             
             if not all_texts:
                 return {
@@ -651,13 +823,15 @@ class WebStockAnalyzer:
             positive_words = {
                 '上涨', '涨停', '利好', '突破', '增长', '盈利', '收益', '回升', '强势', '看好',
                 '买入', '推荐', '优秀', '领先', '创新', '发展', '机会', '潜力', '稳定', '改善',
-                '提升', '超预期', '积极', '乐观', '向好', '受益', '龙头', '热点', '业绩', '合作'
+                '提升', '超预期', '积极', '乐观', '向好', '受益', '龙头', '热点', '爆发', '翻倍',
+                '业绩', '增收', '扩张', '合作', '签约', '中标', '获得', '成功', '完成', '达成'
             }
             
             negative_words = {
                 '下跌', '跌停', '利空', '破位', '下滑', '亏损', '风险', '回调', '弱势', '看空',
-                '卖出', '减持', '较差', '落后', '困难', '危机', '担忧', '悲观', '恶化', '压力',
-                '下降', '低于预期', '消极', '暴跌', '违规', '处罚', '调查', '债务', '问题'
+                '卖出', '减持', '较差', '落后', '滞后', '困难', '危机', '担忧', '悲观', '恶化',
+                '下降', '低于预期', '消极', '压力', '套牢', '被套', '暴跌', '崩盘', '踩雷', '退市',
+                '违规', '处罚', '调查', '停牌', '亏损', '债务', '违约', '诉讼', '纠纷', '问题'
             }
             
             # 分析每类新闻的情绪
@@ -716,7 +890,7 @@ class WebStockAnalyzer:
                 sentiment_trend = '非常消极'
             
             # 计算置信度
-            confidence_score = min(len(all_texts) / 30, 1.0)  # Web版降低基准
+            confidence_score = min(len(all_texts) / 50, 1.0)  # 基于新闻数量的置信度
             
             result = {
                 'overall_sentiment': overall_sentiment,
@@ -724,7 +898,9 @@ class WebStockAnalyzer:
                 'sentiment_trend': sentiment_trend,
                 'confidence_score': confidence_score,
                 'total_analyzed': len(all_texts),
-                'type_distribution': {k: len(v) for k, v in sentiment_by_type.items()}
+                'type_distribution': {k: len(v) for k, v in sentiment_by_type.items()},
+                'positive_ratio': len([s for s in overall_scores if s > 0]) / len(overall_scores) if overall_scores else 0,
+                'negative_ratio': len([s for s in overall_scores if s < 0]) / len(overall_scores) if overall_scores else 0
             }
             
             self.logger.info(f"✓ 高级情绪分析完成: {sentiment_trend} (得分: {overall_sentiment:.3f})")
@@ -740,9 +916,8 @@ class WebStockAnalyzer:
                 'total_analyzed': 0
             }
 
-    # 包含其他分析方法...（技术分析、评分计算等方法与原版相同）
     def calculate_technical_indicators(self, price_data):
-        """计算技术指标"""
+        """计算技术指标（修正版本）"""
         try:
             if price_data.empty:
                 return self._get_default_technical_analysis()
@@ -766,6 +941,7 @@ class WebStockAnalyzer:
                 price_data['ma5'] = price_data['close'].rolling(window=5, min_periods=1).mean()
                 price_data['ma10'] = price_data['close'].rolling(window=10, min_periods=1).mean()
                 price_data['ma20'] = price_data['close'].rolling(window=20, min_periods=1).mean()
+                price_data['ma60'] = price_data['close'].rolling(window=60, min_periods=1).mean()
                 
                 latest_price = safe_float(price_data['close'].iloc[-1])
                 ma5 = safe_float(price_data['ma5'].iloc[-1], latest_price)
@@ -941,8 +1117,8 @@ class WebStockAnalyzer:
             
             # 财务指标评分
             financial_indicators = fundamental_data.get('financial_indicators', {})
-            if len(financial_indicators) >= 10:
-                score += 15
+            if len(financial_indicators) >= 15:  # 有足够的财务指标
+                score += 20
                 
                 # 盈利能力评分
                 roe = financial_indicators.get('净资产收益率', 0)
@@ -1000,7 +1176,7 @@ class WebStockAnalyzer:
             confidence_adjustment = confidence_score * 10
             
             # 新闻数量调整
-            news_adjustment = min(total_analyzed / 50, 1.0) * 10  # Web版降低基准
+            news_adjustment = min(total_analyzed / 100, 1.0) * 10
             
             final_score = base_score + confidence_adjustment + news_adjustment
             final_score = max(0, min(100, final_score))
@@ -1053,9 +1229,10 @@ class WebStockAnalyzer:
             return stock_code
 
     def get_price_info(self, price_data):
-        """从价格数据中提取关键信息"""
+        """从价格数据中提取关键信息 - 修复版本"""
         try:
             if price_data.empty or 'close' not in price_data.columns:
+                self.logger.warning("价格数据为空或缺少收盘价列")
                 return {
                     'current_price': 0.0,
                     'price_change': 0.0,
@@ -1063,8 +1240,29 @@ class WebStockAnalyzer:
                     'volatility': 0.0
                 }
             
+            # 获取最新数据
             latest = price_data.iloc[-1]
+            
+            # 确保使用收盘价作为当前价格
             current_price = float(latest['close'])
+            self.logger.info(f"✓ 当前价格(收盘价): {current_price}")
+            
+            # 如果收盘价异常，尝试使用其他价格
+            if pd.isna(current_price) or current_price <= 0:
+                if 'open' in price_data.columns and not pd.isna(latest['open']) and latest['open'] > 0:
+                    current_price = float(latest['open'])
+                    self.logger.warning(f"⚠️ 收盘价异常，使用开盘价: {current_price}")
+                elif 'high' in price_data.columns and not pd.isna(latest['high']) and latest['high'] > 0:
+                    current_price = float(latest['high'])
+                    self.logger.warning(f"⚠️ 收盘价异常，使用最高价: {current_price}")
+                else:
+                    self.logger.error(f"❌ 所有价格数据都异常")
+                    return {
+                        'current_price': 0.0,
+                        'price_change': 0.0,
+                        'volume_ratio': 1.0,
+                        'volatility': 0.0
+                    }
             
             # 安全的数值处理函数
             def safe_float(value, default=0.0):
@@ -1083,12 +1281,15 @@ class WebStockAnalyzer:
             try:
                 if 'change_pct' in price_data.columns and not pd.isna(latest['change_pct']):
                     price_change = safe_float(latest['change_pct'])
+                    self.logger.info(f"✓ 使用现成的涨跌幅: {price_change}%")
                 elif len(price_data) > 1:
                     prev = price_data.iloc[-2]
                     prev_price = safe_float(prev['close'])
                     if prev_price > 0:
                         price_change = safe_float(((current_price - prev_price) / prev_price * 100))
+                        self.logger.info(f"✓ 计算涨跌幅: {price_change}%")
             except Exception as e:
+                self.logger.warning(f"计算价格变化失败: {e}")
                 price_change = 0.0
             
             # 计算成交量比率
@@ -1102,25 +1303,30 @@ class WebStockAnalyzer:
                         if avg_volume > 0:
                             volume_ratio = safe_float(recent_volume / avg_volume, 1.0)
             except Exception as e:
+                self.logger.warning(f"计算成交量比率失败: {e}")
                 volume_ratio = 1.0
             
             # 计算波动率
             volatility = 0.0
             try:
                 close_prices = price_data['close'].dropna()
-                if len(close_prices) >= 10:
+                if len(close_prices) >= 20:
                     returns = close_prices.pct_change().dropna()
-                    if len(returns) >= 10:
-                        volatility = safe_float(returns.tail(10).std() * 100)
+                    if len(returns) >= 20:
+                        volatility = safe_float(returns.tail(20).std() * 100)
             except Exception as e:
+                self.logger.warning(f"计算波动率失败: {e}")
                 volatility = 0.0
             
-            return {
+            result = {
                 'current_price': safe_float(current_price),
                 'price_change': safe_float(price_change),
                 'volume_ratio': safe_float(volume_ratio, 1.0),
                 'volatility': safe_float(volatility)
             }
+            
+            self.logger.info(f"✓ 价格信息提取完成: {result}")
+            return result
             
         except Exception as e:
             self.logger.error(f"获取价格信息失败: {e}")
@@ -1160,48 +1366,15 @@ class WebStockAnalyzer:
             self.logger.warning(f"生成投资建议失败: {e}")
             return "数据不足，建议谨慎"
 
-    def generate_ai_analysis(self, analysis_data, enable_streaming=False):
-        """生成AI增强分析（恢复完整LLM API调用）"""
-        try:
-            self.logger.info("🤖 开始AI深度分析...")
-            
-            stock_code = analysis_data.get('stock_code', '')
-            stock_name = analysis_data.get('stock_name', stock_code)
-            scores = analysis_data.get('scores', {})
-            technical_analysis = analysis_data.get('technical_analysis', {})
-            fundamental_data = analysis_data.get('fundamental_data', {})
-            sentiment_analysis = analysis_data.get('sentiment_analysis', {})
-            price_info = analysis_data.get('price_info', {})
-            
-            # 构建增强版AI分析提示词
-            prompt = self._build_enhanced_ai_analysis_prompt(
-                stock_code, stock_name, scores, technical_analysis, 
-                fundamental_data, sentiment_analysis, price_info
-            )
-            
-            # 调用AI API - 恢复完整功能
-            ai_response = self._call_ai_api(prompt, enable_streaming)
-            
-            if ai_response:
-                self.logger.info("✅ AI深度分析完成")
-                return ai_response
-            else:
-                self.logger.warning("⚠️ AI API不可用，使用高级分析模式")
-                return self._advanced_rule_based_analysis(analysis_data)
-                
-        except Exception as e:
-            self.logger.error(f"AI分析失败: {e}")
-            return self._advanced_rule_based_analysis(analysis_data)
-
     def _build_enhanced_ai_analysis_prompt(self, stock_code, stock_name, scores, technical_analysis, 
                                         fundamental_data, sentiment_analysis, price_info):
         """构建增强版AI分析提示词，包含所有详细数据"""
         
-        # 提取财务指标
+        # 提取25项财务指标
         financial_indicators = fundamental_data.get('financial_indicators', {})
         financial_text = ""
         if financial_indicators:
-            financial_text = "**核心财务指标：**\n"
+            financial_text = "**25项核心财务指标：**\n"
             for i, (key, value) in enumerate(financial_indicators.items(), 1):
                 if isinstance(value, (int, float)) and value != 0:
                     financial_text += f"{i}. {key}: {value}\n"
@@ -1287,7 +1460,7 @@ class WebStockAnalyzer:
 请基于以上详细数据，从以下维度进行深度分析：
 
 1. **财务健康度深度解读**：
-   - 基于财务指标，全面评估公司财务状况
+   - 基于25项财务指标，全面评估公司财务状况
    - 识别财务优势和风险点
    - 与行业平均水平对比分析
    - 预测未来财务发展趋势
@@ -1357,8 +1530,41 @@ class WebStockAnalyzer:
         
         return formatted if formatted else "无有效数据"
 
+    def generate_ai_analysis(self, analysis_data, enable_streaming=False):
+        """生成AI增强分析"""
+        try:
+            self.logger.info("🤖 开始AI深度分析...")
+            
+            stock_code = analysis_data.get('stock_code', '')
+            stock_name = analysis_data.get('stock_name', stock_code)
+            scores = analysis_data.get('scores', {})
+            technical_analysis = analysis_data.get('technical_analysis', {})
+            fundamental_data = analysis_data.get('fundamental_data', {})
+            sentiment_analysis = analysis_data.get('sentiment_analysis', {})
+            price_info = analysis_data.get('price_info', {})
+            
+            # 构建增强版AI分析提示词
+            prompt = self._build_enhanced_ai_analysis_prompt(
+                stock_code, stock_name, scores, technical_analysis, 
+                fundamental_data, sentiment_analysis, price_info
+            )
+            
+            # 调用AI API
+            ai_response = self._call_ai_api(prompt, enable_streaming)
+            
+            if ai_response:
+                self.logger.info("✅ AI深度分析完成")
+                return ai_response
+            else:
+                self.logger.warning("⚠️ AI API不可用，使用高级分析模式")
+                return self._advanced_rule_based_analysis(analysis_data)
+                
+        except Exception as e:
+            self.logger.error(f"AI分析失败: {e}")
+            return self._advanced_rule_based_analysis(analysis_data)
+
     def _call_ai_api(self, prompt, enable_streaming=False):
-        """调用AI API - 恢复完整功能"""
+        """调用AI API"""
         try:
             model_preference = self.config.get('ai', {}).get('model_preference', 'openai')
             
@@ -1564,7 +1770,7 @@ class WebStockAnalyzer:
             return None
 
     def _advanced_rule_based_analysis(self, analysis_data):
-        """高级规则分析（Web版优化）"""
+        """高级规则分析（AI备用方案）"""
         try:
             self.logger.info("🧠 使用高级规则引擎进行分析...")
             
@@ -1592,7 +1798,7 @@ class WebStockAnalyzer:
             financial_indicators = fundamental_data.get('financial_indicators', {})
             if financial_indicators:
                 key_metrics = []
-                for key, value in list(financial_indicators.items())[:8]:
+                for key, value in list(financial_indicators.items())[:10]:
                     if isinstance(value, (int, float)) and value != 0:
                         key_metrics.append(f"- {key}: {value}")
                 
@@ -1600,7 +1806,7 @@ class WebStockAnalyzer:
 
 获取到{len(financial_indicators)}项财务指标，主要指标如下：
 
-{chr(10).join(key_metrics[:6])}
+{chr(10).join(key_metrics[:8])}
 
 财务健康度评估：{'优秀' if scores.get('fundamental', 50) >= 70 else '良好' if scores.get('fundamental', 50) >= 50 else '需关注'}"""
                 analysis_sections.append(financial_text)
@@ -1656,13 +1862,20 @@ class WebStockAnalyzer:
             self.logger.error(f"高级规则分析失败: {e}")
             return "分析系统暂时不可用，请稍后重试。"
 
+    def set_streaming_config(self, enabled=True, show_thinking=True):
+        """设置流式推理配置"""
+        self.streaming_config.update({
+            'enabled': enabled,
+            'show_thinking': show_thinking
+        })
+
     def analyze_stock(self, stock_code, enable_streaming=None):
-        """分析股票的主方法（Web版优化）"""
+        """分析股票的主方法（修正版）"""
         if enable_streaming is None:
             enable_streaming = self.streaming_config.get('enabled', False)
         
         try:
-            self.logger.info(f"开始Web版股票分析: {stock_code}")
+            self.logger.info(f"开始增强版股票分析: {stock_code}")
             
             # 获取股票名称
             stock_name = self.get_stock_name(stock_code)
@@ -1677,18 +1890,18 @@ class WebStockAnalyzer:
             technical_analysis = self.calculate_technical_indicators(price_data)
             technical_score = self.calculate_technical_score(technical_analysis)
             
-            # 2. 获取财务指标和基本面分析
-            self.logger.info("正在进行财务指标分析...")
+            # 2. 获取25项财务指标和综合基本面分析
+            self.logger.info("正在进行25项财务指标分析...")
             fundamental_data = self.get_comprehensive_fundamental_data(stock_code)
             fundamental_score = self.calculate_fundamental_score(fundamental_data)
             
-            # 3. 获取新闻数据和情绪分析
-            self.logger.info("正在进行新闻和情绪分析...")
-            comprehensive_news_data = self.get_comprehensive_news_data(stock_code, days=15)
+            # 3. 获取综合新闻数据和高级情绪分析
+            self.logger.info("正在进行综合新闻和情绪分析...")
+            comprehensive_news_data = self.get_comprehensive_news_data(stock_code, days=30)
             sentiment_analysis = self.calculate_advanced_sentiment_analysis(comprehensive_news_data)
             sentiment_score = self.calculate_sentiment_score(sentiment_analysis)
             
-            # 合并新闻数据到情绪分析结果中
+            # 合并新闻数据到情绪分析结果中，方便AI分析使用
             sentiment_analysis.update(comprehensive_news_data)
             
             # 4. 计算综合得分
@@ -1706,7 +1919,7 @@ class WebStockAnalyzer:
             # 5. 生成投资建议
             recommendation = self.generate_recommendation(scores)
             
-            # 6. AI增强分析
+            # 6. AI增强分析（包含所有详细数据）
             ai_analysis = self.generate_ai_analysis({
                 'stock_code': stock_code,
                 'stock_name': stock_name,
@@ -1734,11 +1947,11 @@ class WebStockAnalyzer:
                 'data_quality': {
                     'financial_indicators_count': len(fundamental_data.get('financial_indicators', {})),
                     'total_news_count': sentiment_analysis.get('total_analyzed', 0),
-                    'analysis_completeness': '完整' if len(fundamental_data.get('financial_indicators', {})) >= 10 else '部分'
+                    'analysis_completeness': '完整' if len(fundamental_data.get('financial_indicators', {})) >= 15 else '部分'
                 }
             }
             
-            self.logger.info(f"✓ Web版股票分析完成: {stock_code}")
+            self.logger.info(f"✓ 增强版股票分析完成: {stock_code}")
             self.logger.info(f"  - 财务指标: {len(fundamental_data.get('financial_indicators', {}))} 项")
             self.logger.info(f"  - 新闻数据: {sentiment_analysis.get('total_analyzed', 0)} 条")
             self.logger.info(f"  - 综合得分: {scores['comprehensive']:.1f}")
@@ -1746,23 +1959,44 @@ class WebStockAnalyzer:
             return report
             
         except Exception as e:
-            self.logger.error(f"Web版股票分析失败 {stock_code}: {str(e)}")
+            self.logger.error(f"增强版股票分析失败 {stock_code}: {str(e)}")
             raise
+
+    # 兼容旧版本的方法名
+    def get_fundamental_data(self, stock_code):
+        """兼容方法：获取基本面数据"""
+        return self.get_comprehensive_fundamental_data(stock_code)
+    
+    def get_news_data(self, stock_code, days=30):
+        """兼容方法：获取新闻数据"""
+        return self.get_comprehensive_news_data(stock_code, days)
+    
+    def calculate_news_sentiment(self, news_data):
+        """兼容方法：计算新闻情绪"""
+        return self.calculate_advanced_sentiment_analysis(news_data)
+    
+    def get_sentiment_analysis(self, stock_code):
+        """兼容方法：获取情绪分析"""
+        news_data = self.get_comprehensive_news_data(stock_code)
+        return self.calculate_advanced_sentiment_analysis(news_data)
+
 
 def main():
     """主函数"""
     analyzer = WebStockAnalyzer()
     
     # 测试分析
-    test_stocks = ['000001', '600036']
+    test_stocks = ['000001', '600036', '300019', '000525']
     
     for stock_code in test_stocks:
         try:
-            print(f"\n=== 开始Web版分析 {stock_code} ===")
+            print(f"\n=== 开始增强版分析 {stock_code} ===")
             report = analyzer.analyze_stock(stock_code)
             
             print(f"股票代码: {report['stock_code']}")
             print(f"股票名称: {report['stock_name']}")
+            print(f"当前价格: {report['price_info']['current_price']:.2f}元")
+            print(f"涨跌幅: {report['price_info']['price_change']:.2f}%")
             print(f"财务指标数量: {report['data_quality']['financial_indicators_count']}")
             print(f"新闻数据量: {report['data_quality']['total_news_count']}")
             print(f"综合得分: {report['scores']['comprehensive']:.1f}")
@@ -1771,6 +2005,7 @@ def main():
             
         except Exception as e:
             print(f"分析 {stock_code} 失败: {e}")
+
 
 if __name__ == "__main__":
     main()
