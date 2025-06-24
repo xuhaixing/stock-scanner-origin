@@ -54,7 +54,7 @@
 
 ```bash
 # 克隆项目
-git clone [项目地址]
+git clone https://github.com/DR-lin-eng/stock-scanner.git
 cd stock-analysis-system
 
 # 安装依赖
@@ -297,7 +297,7 @@ gunicorn -w 4 -b 0.0.0.0:5000 flask_web_server:app
 docker-compose up -d
 ```
 
-### 反向代理(Nginx)
+### 反向代理参考(Nginx)
 ```nginx
 server {
     listen 80;
