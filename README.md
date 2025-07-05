@@ -10,6 +10,10 @@
 🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
 
 #### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）
+## 近期开发日志
+- docker编译支持一键部署 x86及arm 64
+- 港美股支持
+- 其他慢慢想和学习一些策略。
 ## ✨ 核心特性
 
 ### 🎯 多维度分析
