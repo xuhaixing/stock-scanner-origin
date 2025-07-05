@@ -9,7 +9,7 @@
 如果这个项目对您有帮助，欢迎支持：
 🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
 
-#### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。
+#### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）
 ## ✨ 核心特性
 
 ### 🎯 多维度分析
