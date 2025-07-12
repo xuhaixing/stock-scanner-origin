@@ -391,7 +391,7 @@ SOFTWARE.
 
 
 ## 💖 特别鸣谢
-
+![Pollinations AI](https://auth.pollinations.ai/) 为提供图像生成服务
 ![NodeSupport](https://github.com/user-attachments/assets/843f88fc-ecf7-4993-93c4-f82a29078e28)
 
 [yxvm](https://yxvm.com/) | [NodeSupport](https://github.com/NodeSeekDev/NodeSupport) 赞助了本项目
