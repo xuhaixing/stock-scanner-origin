@@ -4,6 +4,16 @@
 
 这是一个专业的AI增强A股股票分析系统，集成了**25项财务指标分析**、**综合新闻情绪分析**、**技术指标计算**和**AI深度解读**。系统支持多种AI模型（OpenAI GPT、Claude、智谱AI），提供桌面GUI和Web两种界面，具备实时流式推送功能。
 
+## 💰 请我喝奶茶
+
+如果这个项目对您有帮助，欢迎支持：
+🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
+
+#### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）
+## 近期开发日志
+- docker编译支持一键部署 x86及arm 64
+- 港美股支持
+- 其他慢慢想和学习一些策略。
 ## ✨ 核心特性
 
 ### 🎯 多维度分析
@@ -378,13 +388,10 @@ SOFTWARE.
 
 **本系统仅用于学习和研究目的，所有分析结果仅供参考，不构成投资建议。投资有风险，入市需谨慎。**
 
-## 💰 请我喝奶茶
 
-如果这个项目对您有帮助，欢迎支持：
-🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
 
 ## 💖 特别鸣谢
-
+[Pollinations AI](https://auth.pollinations.ai/) 为提供llm生成服务
 ![NodeSupport](https://github.com/user-attachments/assets/843f88fc-ecf7-4993-93c4-f82a29078e28)
 
 [yxvm](https://yxvm.com/) | [NodeSupport](https://github.com/NodeSeekDev/NodeSupport) 赞助了本项目
