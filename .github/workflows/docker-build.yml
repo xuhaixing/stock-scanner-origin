@@ -1,4 +1,4 @@
-name: Build and Push to GHCR (Simplified)
+name: Multi-Platform Docker Build and Push
 
 on:
   push:
@@ -11,63 +11,88 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 添加写入权限
+      contents: read
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # 设置 QEMU 用于多架构仿真
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # 添加token用于推送
+          platforms: arm64,amd64
 
-      - name: Set up Docker
-        run: |
-          sudo apt-get update
-          sudo apt-get -f install
-          sudo dpkg --configure -a
-          sudo apt-get install -y ca-certificates curl gnupg
-          sudo install -m 0755 -d /etc/apt/keyrings
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-          sudo chmod a+r /etc/apt/keyrings/docker.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      # 设置 Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        id: buildx
+        with:
+          version: v1.14.0  # 使用稳定版本
+          driver: docker-container
+          buildkitd-flags: --debug
 
+      # 登录到 GitHub Container Registry
       - name: Log in to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 转换为小写仓库名
       - name: Convert repository to lowercase
         run: |
           LOWERCASE_REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "REPO_LOWER=$LOWERCASE_REPO" >> $GITHUB_ENV
 
-      - name: Build Docker image
-        run: |
-          sudo docker build \
-            -f "2.6 webapp（流式传输测试版）/Dockerfile" \
-            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6 \
-            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest \
-            "2.6 webapp（流式传输测试版）"
+      # 多平台构建和推送
+      - name: Build and push multi-platform Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./2.6 webapp（流式传输测试版）
+          file: ./2.6 webapp（流式传输测试版）/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/ppc64le
+          push: true
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false  # 禁用证明生成以避免之前的错误
 
-      - name: Push Docker image
+      # 添加多架构徽章
+      - name: Add multi-arch badge to README
         run: |
-          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6
-          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest
-
-      - name: Add badge to README
-        run: |
-          # 检查是否已有徽章
-          if grep -q "ghcr-badge.deta.dev" README.md; then
-            # 替换现有徽章
-            sed -i 's|!\[Docker Image\].*|![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major\&label=最新版本)|' README.md
+          # 创建临时分支
+          git checkout -b update-readme-badge
+          
+          # 更新README
+          BADGE_URL="https://img.shields.io/badge/AMD64%20%26%20ARM64-supported-brightgreen"
+          if grep -q "multi-arch-badge" README.md; then
+            sed -i "s|!\[Multi-Arch Support\].*|![Multi-Arch Support]($BADGE_URL)|" README.md
           else
-            # 添加新徽章
-            echo "![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major\&label=最新版本)" >> README.md
+            echo -e "\n## 🐳 Docker 镜像" >> README.md
+            echo "![Multi-Arch Support]($BADGE_URL)" >> README.md
+            echo "![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major&label=最新版本)" >> README.md
           fi
           
           git config user.name "GitHub Actions"
           git config user.email "actions@users.noreply.github.com"
           git add README.md
-          git commit -m "Update Docker image badge" || echo "No changes to commit"
-          git push origin HEAD:${{ github.ref }}  # 使用正确的方式推送
+          git commit -m "Add multi-arch Docker badge"
+          
+          # 推送到临时分支
+          git push origin update-readme-badge
+          
+          # 创建PR
+          gh pr create \
+            --title "Update README with multi-arch Docker badge" \
+            --body "添加了多架构 Docker 镜像支持徽章" \
+            --base main \
+            --head update-readme-badge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
