@@ -31,10 +31,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
       
-      - name: Set up Docker Buildx
+      - name: Set up QEMU for multi-architecture
         run: |
-          sudo docker buildx create --name multiarch --driver docker-container --use
-          sudo docker buildx inspect --bootstrap
+          sudo docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
       
       - name: Log in to GHCR
         run: |
@@ -45,15 +44,46 @@ jobs:
           LOWERCASE_REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "REPO_LOWER=$LOWERCASE_REPO" >> $GITHUB_ENV
       
-      - name: Build and push Docker image (Multi-architecture)
+      - name: Build AMD64 image
         run: |
-          sudo docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+          sudo docker build \
+            --platform linux/amd64 \
             -f "2.6 webapp（流式传输测试版）/Dockerfile" \
-            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6 \
-            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest \
-            --push \
+            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-amd64 \
+            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-amd64 \
             "2.6 webapp（流式传输测试版）"
+      
+      - name: Build ARM64 image
+        run: |
+          sudo docker build \
+            --platform linux/arm64 \
+            -f "2.6 webapp（流式传输测试版）/Dockerfile" \
+            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-arm64 \
+            -t ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-arm64 \
+            "2.6 webapp（流式传输测试版）"
+      
+      - name: Push individual architecture images
+        run: |
+          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-amd64
+          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-amd64
+          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-arm64
+          sudo docker push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-arm64
+      
+      - name: Create and push multi-architecture manifest
+        run: |
+          # Create manifest for version 2.6
+          sudo docker manifest create ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6 \
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-amd64 \
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6-arm64
+          
+          # Create manifest for latest
+          sudo docker manifest create ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest \
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-amd64 \
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest-arm64
+          
+          # Push manifests
+          sudo docker manifest push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6
+          sudo docker manifest push ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest
       
       - name: Add badge to README
         run: |
