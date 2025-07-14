@@ -11,21 +11,20 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # 添加写入权限
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # 添加token用于推送
 
       - name: Set up Docker
         run: |
-          # 清理和修复包管理器
           sudo apt-get update
           sudo apt-get -f install
           sudo dpkg --configure -a
-          
-          # 安装最新Docker（官方方法）
           sudo apt-get install -y ca-certificates curl gnupg
           sudo install -m 0755 -d /etc/apt/keyrings
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -58,10 +57,17 @@ jobs:
 
       - name: Add badge to README
         run: |
-          echo "![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major&label=最新版本)" >> README.md
+          # 检查是否已有徽章
+          if grep -q "ghcr-badge.deta.dev" README.md; then
+            # 替换现有徽章
+            sed -i 's|!\[Docker Image\].*|![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major\&label=最新版本)|' README.md
+          else
+            # 添加新徽章
+            echo "![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major\&label=最新版本)" >> README.md
+          fi
+          
           git config user.name "GitHub Actions"
           git config user.email "actions@users.noreply.github.com"
           git add README.md
-          git commit -m "Add Docker image badge" || echo "No changes to commit"
-          git push
-        if: ${{ success() }}
+          git commit -m "Update Docker image badge" || echo "No changes to commit"
+          git push origin HEAD:${{ github.ref }}  # 使用正确的方式推送
