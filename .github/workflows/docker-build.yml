@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # 关键权限
+      packages: write
 
     steps:
       - name: Checkout repository
@@ -26,7 +26,13 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # 自动可用
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Convert repository to lowercase
+        id: lowercase_repo
+        run: |
+          LOWERCASE_REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_LOWER=$LOWERCASE_REPO" >> $GITHUB_ENV
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -35,15 +41,14 @@ jobs:
           file: ./2.6 webapp（流式传输测试版）/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/stock-webapp:2.6
-            ghcr.io/${{ github.repository }}/stock-webapp:latest
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:2.6
+            ghcr.io/${{ env.REPO_LOWER }}/stock-webapp:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.prep.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Update README badge
         run: |
-          echo "![Docker Image]($(ghcr.io/${{ github.repository }}/stock-webapp/badge))" >> README.md
+          echo "![Docker Image](https://ghcr-badge.deta.dev/${{ env.REPO_LOWER }}/stock-webapp/latest_tag?trim=major&label=最新版本)" >> README.md
         if: ${{ success() }}
