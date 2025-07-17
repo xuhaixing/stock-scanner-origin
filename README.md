@@ -10,7 +10,8 @@
 如果这个项目对您有帮助，欢迎支持：
 🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
 
-#### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）
+#### ~~最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）~~
+#### 已经恢复demo站点，使用deepseek-ai/DeepSeek-R1-0528-Qwen3-8B模型分析。版本为2.6webapp（流式传输版本）
 ## 近期开发日志
 - docker编译支持一键部署 x86及arm 64
 - 港美股支持
