@@ -12,7 +12,7 @@
 ## demo网站小日志
 #### ~~最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）~~
 #### 更换cdn到国内节点
-#### 已经恢复demo站点，使用deepseek-ai/DeepSeek-R1-0528-Qwen3-8B模型分析。版本为3.1webapp  正在测试bug(有bug）。
+#### 已经恢复demo站点，使用deepseek-ai/DeepSeek-R1-0528-Qwen3-8B模型分析。版本为2.6webapp（3.1出现大量bug，回退）。
 ## 近期开发日志
 - docker编译支持一键部署 x86及arm 64
 - 港美股支持
