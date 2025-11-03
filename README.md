@@ -2,14 +2,18 @@
 
 ## 📋 项目简介
 
-这是一个专业的AI增强A股股票分析系统，集成了**25项财务指标分析**、**综合新闻情绪分析**、**技术指标计算**和**AI深度解读**。系统支持多种AI模型（OpenAI GPT、Claude、智谱AI），提供桌面GUI和Web两种界面，具备实时流式推送功能。
+这是一个比较专业的AI增强 A股股票分析系统，集成了**25项财务指标分析**、**综合新闻情绪分析**、**技术指标计算**和**AI深度解读**。系统支持多种AI模型（OpenAI GPT、Claude、智谱AI），提供桌面GUI和Web两种界面，具备实时流式推送功能。
+暂时只支持中国股票，港美股正在优化还未发布，港美股新闻信息等获取受限缓慢优化中。
 
+### 近期刚刚开学。事情比较多有点摆。可能有些问题修复受限（在逆向学校查寝系统中）
 ## 💰 请我喝奶茶
 
 如果这个项目对您有帮助，欢迎支持：
 🔗 [https://juanzen.linzefeng.top/](https://juanzen.linzefeng.top/)
-
-#### 最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）
+## demo网站小日志
+#### ~~最近家里云openwrt不堪重负的逝去了，择日恢复demo站点。(大家不要学我all in one，那么就会变成all in boom）~~
+#### 更换cdn到国内节点
+#### 已经恢复demo站点，使用deepseek-ai/DeepSeek-R1-0528-Qwen3-8B模型分析。版本为2.6webapp（3.1出现大量bug，回退）。
 ## 近期开发日志
 - docker编译支持一键部署 x86及arm 64
 - 港美股支持
@@ -406,6 +410,7 @@ Created by [linzefeng]
 
 **如果这个项目对您有帮助，请给个 ⭐ Star 支持一下！**
 
-[📧 Issue反馈](../../issues) | [🚀 功能建议](../../discussions) | [📖 更多文档](../../wiki)
+[📧 Issue反馈](../../issues) | [🚀 功能建议](../../discussions) | [📖 更多文档](../../wiki) | ![Docker Image](https://ghcr-badge.deta.dev/dr-lin-eng/stock-scanner/stock-webapp/latest_tag?trim=major\&label=最新版本)
+
 
 </div>
